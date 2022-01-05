@@ -119,7 +119,7 @@ def parse_dense_format(node_embed):
         # keep track of number of atoms consumeed
         start = start + n
 
-    # Don't proceess single amino acid prorteins
+    # Don't proceess single amino acid proteins
     if len(pos) < 2:
         return None, None, None, None, None, None
 
@@ -163,6 +163,15 @@ def cif_to_embed(cif_file, ix=None, parse_skip=False):
 
     """
     st = gemmi.read_structure(cif_file)
+    # print(st)
+    # for model in st:
+    #     print(model)
+    #     for chain in model:
+    #         print(chain)
+    #         for residue in chain:
+
+    #             print(residue)
+        
 
     results = []
     skips = []
@@ -372,6 +381,10 @@ def _parse_residue(residue):
             atom = residue[recorrect_name(atom)]
         else:
             return None
+
+        #accounts for AtomGroup class 
+        atom = atom[0] if type(atom) is gemmi.AtomGroup else atom
+
 
         pos.append((atom.pos.x, atom.pos.y, atom.pos.z))
         node_embeds.append(

@@ -8,6 +8,7 @@ import os
 import os.path as osp
 import pickle
 import random
+import datetime
 
 import numpy as np
 from scipy.stats import special_ortho_group
@@ -21,7 +22,7 @@ from data import MMCIFTransformer, collate_fn_transformer, collate_fn_transforme
 from easydict import EasyDict
 from mmcif_utils import compute_rotamer_score_planar
 from models import RotomerFCModel, RotomerGraphModel, RotomerSet2SetModel, RotomerTransformerModel
-from tensorboard import TensorBoardOutputFormat
+#from tensorboard_v2 import TensorBoardOutputFormat
 from tensorflow.python.platform import flags
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
@@ -260,6 +261,19 @@ def train(
 ):
     it = FLAGS.resume_iter
     count_it = 0
+    
+    metrics = {}
+    metrics['test_losses'] = []
+    metrics['test_rotamer'] = []
+    metrics['test_accs'] = []
+    
+    metrics['loss'] = []
+    metrics['energy_pos'] = []
+    metrics['energy_neg'] = []
+    metrics['log_interval'] = FLAGS.log_interval
+
+    metrics_path = os.path.join(logdir, "metrics" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
+
     for i in range(FLAGS.n_epochs):
 
         for node_pos, node_neg in train_dataloader:
@@ -275,7 +289,10 @@ def train(
                 string = "Test epoch of  {}".format(i)
                 for k, v in kvs.items():
                     string += "{}: {}, ".format(k, v)
-                    logger.writekvs(kvs)
+                    try:    
+                        metrics[k].append(v)
+                    except:
+                        raise ValueError("{} not in metrics".format(k))
 
                 print(string)
 
@@ -323,12 +340,16 @@ def train(
 
                 for k, v in kvs.items():
                     string += "{}: {}, ".format(k, v)
-                    logger.writekvs(kvs)
+                    try:    
+                        metrics[k].append(v)
+                    except:
+                        raise ValueError("{} not in metrics".format(k))
 
                 print(string)
 
             if it % FLAGS.save_interval == 0 and rank_idx == 0:
                 model_path = osp.join(logdir, "model_{}".format(it))
+                print(model_path)
                 torch.save(
                     {
                         "model_state_dict": model.state_dict(),
@@ -338,6 +359,11 @@ def train(
                     model_path,
                 )
                 print("Saving model in directory....")
+
+
+                metrics_file = open(metrics_path, "w")
+                pickle.dump(metrics, metrics_file)
+                print("Saved metrics to {}".format(metrics_path))
 
 
 def test(test_dataloader, model, FLAGS, logdir, test=False):
@@ -539,6 +565,7 @@ def main_single(gpu, FLAGS):
     FLAGS_OLD = FLAGS
 
     logdir = osp.join(FLAGS.logdir, FLAGS.exp)
+    print(logdir)
 
     if FLAGS.resume_iter != 0:
         model_path = osp.join(logdir, "model_{}".format(FLAGS.resume_iter))
@@ -586,7 +613,7 @@ def main_single(gpu, FLAGS):
     if FLAGS.gpus > 1:
         sync_model(model)
 
-    logger = TensorBoardOutputFormat(logdir)
+    logger = None #TensorBoardOutputFormat(logdir)
 
     it = FLAGS.resume_iter
 
@@ -596,6 +623,7 @@ def main_single(gpu, FLAGS):
     checkpoint = None
     if FLAGS.resume_iter != 0:
         model_path = osp.join(logdir, "model_{}".format(FLAGS.resume_iter))
+        print('USING CHECKPOINT FOR {}'.format(model_path))
         checkpoint = torch.load(model_path)
         try:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -656,7 +684,7 @@ def main():
     if flags_dict.gpus > 1:
         mp.spawn(main_single, nprocs=flags_dict.gpus, args=(flags_dict,))
     else:
-        main_single(0, flags_dict)
+        main_single(0, flags_dict) #CHANGE GPU INDEX
 
 
 if __name__ == "__main__":
